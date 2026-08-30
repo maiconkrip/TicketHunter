@@ -1,15 +1,26 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
+
+
 def calcular_idade(ano_nascimento: int, ano_atual: int = 2026) -> int:
     """Calcula a idade com base no ano de nascimento."""
+    if ano_nascimento > ano_atual:
+        raise ValueError("O ano de nascimento não pode ser no futuro.")
     return ano_atual - ano_nascimento
 
 
 def run() -> None:
+    print(f"--- Iniciando TicketHunter [Ambiente: {ENVIRONMENT}] ---")
     try:
         ano = int(input("Digite o ano do seu nascimento: "))
         idade = calcular_idade(ano)
         print(f"Sua idade é: {idade} anos.")
-    except ValueError:
-        print("Por favor, digite um ano válido.")
+    except ValueError as e:
+        print(f"Erro desconhecido: {e}")
 
 
 if __name__ == "__main__":

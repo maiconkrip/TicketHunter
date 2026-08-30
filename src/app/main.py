@@ -17,8 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-
 @app.get("/api/voos")
 def buscar_voos(
     origem: str = Query(..., description="Código IATA de origem, ex: POA"),
@@ -28,8 +26,10 @@ def buscar_voos(
     """
     Busca opções de voos utilizando a SerpApi (Google Flights Engine).
     """
-    if not SERPAPI_KEY:
-        # Se não houver chave configurada, retorna um erro amigável
+    # Consulta a chave no momento da requisição
+    serpapi_key = os.getenv("SERPAPI_KEY")
+
+    if not serpapi_key:
         raise HTTPException(
             status_code=500, 
             detail="SERPAPI_KEY não configurada no ambiente."
@@ -42,7 +42,7 @@ def buscar_voos(
         "outbound_date": data_ida,
         "currency": "BRL",
         "hl": "pt",
-        "api_key": SERPAPI_KEY
+        "api_key": serpapi_key
     }
 
     try:

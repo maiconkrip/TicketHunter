@@ -13,23 +13,44 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Baixar codigo do repositorio
+      - name: Baixar codigo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Garante acesso ao historico completo de commits
+          fetch-depth: 0
 
-      - name: Executar Analise do Diff com Gemini
-        uses: google-gemini/review-pull-request-action@v1
+      - name: Configurar Python
+        uses: actions/setup-python@v5
         with:
-          api-key: ${{ secrets.GEMINI_API_KEY }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          model: 'gemini-1.5-flash'
-          system-prompt: |
-            Você é um Engenheiro de Software Senior e Revisor de Código.
-            Sua tarefa é comparar as alterações feitas neste Pull Request com a versão anterior (branch base).
-            
-            Sua análise deve cobrir:
-            1. **Mudanças Significativas:** Resuma o que mudou em relação ao código antigo.
-            2. **Análise de Regressão:** Verifique se algo no código novo pode quebrar o código anterior.
-            3. **Boas Práticas e Segurança:** Identifique vulnerabilidades, falta de tipagem ou código ineficiente.
-            4. **Veredito:** Indique claramente se o PR está aprovado para HML ou se precisa de correções.
+          python-version: '3.11'
+
+      - name: Instalar dependencias
+        run: |
+          pip install google-genai PyGithub
+
+      - name: Executar Review da IA
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          python -c "
+          import os, github, google.genai as genai
+
+          gh = github.Github(os.getenv('GITHUB_TOKEN'))
+          repo = gh.get_repo(os.getenv('REPO_NAME'))
+          pr = repo.get_pull(int(os.getenv('PR_NUMBER')))
+
+          diffs = []
+          for file in pr.get_files():
+              diffs.append(f'Arquivo: {file.filename}\n{file.patch}')
+          diff_text = '\n\n'.join(diffs)
+
+          client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
+          response = client.models.generate_content(
+              model='gemini-2.5-flash',
+              contents=f'Você é um Code Reviewer Senior. Analise este Diff de PR e faça comentários sobre qualidade, bugs e aprovação para HML:\n\n{diff_text}'
+          )
+
+          pr.create_issue_comment(f'### 🤖 Análise do Agente de IA\n\n{response.text}')
+          "

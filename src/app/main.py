@@ -1,38 +1,78 @@
 import os
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from serpapi import GoogleSearch
 from dotenv import load_dotenv
 
 load_dotenv()
 
-ENVIRONMENT = os.getenv("ENVIRONMENT", "DEV")
+app = FastAPI(title="TicketHunter - Buscador de Voos")
 
+# Permite requisições do front-end
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-def calcular_idade(ano_nascimento: int, ano_atual: int = 2026) -> int:
-    """Calcula a idade com base no ano de nascimento."""
-    if ano_nascimento > ano_atual:
-        raise ValueError("O ano de nascimento não pode ser no futuro.")
-    return ano_atual - ano_nascimento
+@app.get("/api/voos")
+def buscar_voos(
+    origem: str = Query(..., description="Código IATA de origem, ex: POA"),
+    destino: str = Query(..., description="Código IATA de destino, ex: GRU"),
+    data_ida: str = Query(..., description="Data de ida no formato YYYY-MM-DD")
+):
+    """
+    Busca opções de voos utilizando a SerpApi (Google Flights Engine).
+    """
+    # Consulta a chave no momento da requisição
+    serpapi_key = os.getenv("SERPAPI_KEY")
 
-def calcular_idade2(ano_nascimento: int, ano_atual: int = 2026) -> int:
-    """Calcula a idade com base no ano de nascimento."""
-    if ano_nascimento >= ano_atual:
-        raise ValueError("O ano de nascimento não pode ser no futuro.")
-    return ano_atual - ano_nascimento
+    if not serpapi_key:
+        raise HTTPException(
+            status_code=500, 
+            detail="SERPAPI_KEY não configurada no ambiente."
+        )
 
+    params = {
+        "engine": "google_flights",
+        "departure_id": origem.upper(),
+        "arrival_id": destino.upper(),
+        "outbound_date": data_ida,
+        "currency": "BRL",
+        "hl": "pt",
+        "api_key": serpapi_key
+    }
 
-def run() -> None:
-    print(f"--- Iniciando TicketHunter [Ambiente: {ENVIRONMENT}] ---")
     try:
-        ano = int(input("Digite o ano do seu nascimento: "))
-        idade = calcular_idade(ano)
-        print(f"Sua idade é: {idade} anos.")
-    except ValueError as e:
-        print(f"Erro desconhecido: {e}")
+        search = GoogleSearch(params)
+        results = search.get_dict()
+        
+        # Filtra e extrai apenas os dados mais relevantes dos voos
+        best_flights = results.get("best_flights", [])
+        other_flights = results.get("other_flights", [])
+        
+        todos_voos = best_flights + other_flights
+        
+        voos_formatados = []
+        for flight in todos_voos:
+            first_segment = flight.get("flights", [])[0] if flight.get("flights") else {}
+            voos_formatados.append({
+                "companhia": first_segment.get("airline"),
+                "numero_voo": first_segment.get("flight_number"),
+                "preco": flight.get("price"),
+                "duracao_total_minutos": flight.get("total_duration"),
+                "escalas": len(flight.get("flights", [])) - 1
+            })
 
-def converter_ano_para_texto(ano: int) -> str:
-    """Converte o ano de nascimento para representação textual."""
-    if not isinstance(ano, int):
-        raise TypeError("O ano deve ser um número inteiro.")
-    return f"Ano de nascimento registrado: {ano}"
+        return {
+            "origem": origem.upper(),
+            "destino": destino.upper(),
+            "data_ida": data_ida,
+            "total_resultados": len(voos_formatados),
+            "voos": voos_formatados
+        }
 
-if __name__ == "__main__":
-    run()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erro ao buscar voos: {str(e)}")

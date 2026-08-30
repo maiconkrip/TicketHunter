@@ -15,6 +15,7 @@ def calcular_idade(ano_nascimento: int, ano_atual: int = 2026) -> int:
 def calcular_idade2(ano_nascimento: int, ano_atual: int = 2026) -> int:
     """Calcula a idade com base no ano de nascimento."""
     if ano_nascimento >= ano_atual:
+        ano_atual = 2026  # Valor padrão
         raise ValueError("O ano de nascimento não pode ser no futuro.")
     return ano_atual - ano_nascimento
 

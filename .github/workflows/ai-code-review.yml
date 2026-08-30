@@ -27,7 +27,7 @@ jobs:
         run: |
           pip install google-genai PyGithub
 
-      - name: Executar Review da IA com Fallback
+      - name: Executar Review da IA e Validar Veredito
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -35,43 +35,47 @@ jobs:
           REPO_NAME: ${{ github.repository }}
         run: |
           python -c "
-          import os, github
+          import os, sys, github
           from google import genai
 
-          # Autenticação GitHub
           auth = github.Auth.Token(os.getenv('GITHUB_TOKEN'))
           gh = github.Github(auth=auth)
           repo = gh.get_repo(os.getenv('REPO_NAME'))
           pr = repo.get_pull(int(os.getenv('PR_NUMBER')))
 
-          # Coleta alterações do PR
           diffs = []
           for file in pr.get_files():
               diffs.append(f'Arquivo: {file.filename}\n{file.patch}')
           diff_text = '\n\n'.join(diffs)
 
           client = genai.Client(api_key=os.getenv('GEMINI_API_KEY'))
-
-          # Prioridade: 3.7-flash -> 3.5-flash-lite -> 1.5-flash
-          models_to_try = ['gemini-3.7-flash', 'gemini-3.5-flash-lite', 'gemini-1.5-flash']
+          models_to_try = ['gemini-3.5-flash-lite','gemini-3.7-flash', 'gemini-1.5-flash']
           response = None
 
-          prompt = f'Você é um Code Reviewer Senior. Analise este Diff de PR e faça comentários sobre qualidade, bugs e aprovação para HML:\n\n{diff_text}'
+          prompt = (
+              'Você é um Code Reviewer Senior. Analise o Diff abaixo.\n'
+              'Obrigatório: Inicie a resposta EXATAMENTE com \"STATUS: APROVADO\" ou \"STATUS: REPROVADO\" na primeira linha.\n'
+              'Só aprove se o código não contiver bugs graves, falhas de segurança ou falta de tratamento de exceções.\n\n'
+              f'{diff_text}'
+          )
 
           for model_name in models_to_try:
               try:
-                  print(f'Tentando gerar análise com modelo: {model_name}...')
-                  response = client.models.generate_content(
-                      model=model_name,
-                      contents=prompt
-                  )
-                  print(f'Sucesso com o modelo {model_name}!')
+                  response = client.models.generate_content(model=model_name, contents=prompt)
                   break
               except Exception as e:
-                  print(f'Falha ao usar {model_name}: {e}. Alternando para o próximo modelo...')
+                  print(f'Erro no {model_name}: {e}')
 
-          if response and response.text:
-              pr.create_issue_comment(f'### 🤖 Análise do Agente de IA\n\n{response.text}')
+          if not response or not responsegit reset --soft HEAD~1.text:
+              sys.exit('Falha: nenhum modelo respondeu.')
+
+          # Posta a análise nos comentários
+          pr.create_issue_comment(f'### 🤖 Análise do Agente de IA\n\n{response.text}')
+
+          # Reprova o PR (interrompe a pipeline) se o veredito for negativo
+          if 'STATUS: REPROVADO' in response.text.upper():
+              print('❌ A IA reprovou este Pull Request.')
+              sys.exit(1)
           else:
-              raise RuntimeError('Não foi possível obter resposta de nenhum modelo configurado.')
+              print('✅ A IA aprovou este Pull Request.')
           "

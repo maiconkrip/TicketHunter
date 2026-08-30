@@ -22,6 +22,11 @@ def run() -> None:
     except ValueError as e:
         print(f"Erro desconhecido: {e}")
 
+def converter_ano_para_texto(ano: int) -> str:
+    """Converte o ano de nascimento para representação textual."""
+    if not isinstance(ano, int):
+        raise TypeError("O ano deve ser um número inteiro.")
+    return f"Ano de nascimento registrado: {ano}"
 
 if __name__ == "__main__":
     run()
